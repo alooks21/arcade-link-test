@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arcade Link Test</title>
+<style>
+/* Layout: one narrow column of numbered steps, a live readout panel, and a copyable report. */
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --fg: #15171c; --dim: #5d6472; --line: #dfe2e8;
+  --accent: #c8202b; --good: #1d7f45; --warn: #a15c00; --bad: #b3261e;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --sans: system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101216; --panel: #181b21; --fg: #eceef2; --dim: #9aa1ae; --line: #2a2e37;
+    --accent: #ff4d57; --good: #4fd67a; --warn: #f0a63a; --bad: #ff6b62; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101216; --panel: #181b21; --fg: #eceef2; --dim: #9aa1ae; --line: #2a2e37;
+  --accent: #ff4d57; --good: #4fd67a; --warn: #f0a63a; --bad: #ff6b62; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 var(--sans); }
+main { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; display: grid; gap: 16px; }
+h1 { margin: 0; font-size: 1.45rem; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { margin: 0 0 8px; font-size: 1rem; }
+p { margin: 0; }
+.dim { color: var(--dim); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; }
+button { font: inherit; padding: 9px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: .5; cursor: default; }
+textarea { width: 100%; min-height: 84px; font: 12px/1.4 var(--mono); padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); resize: vertical; word-break: break-all; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
+dt { color: var(--dim); }
+dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: .85em; font-weight: 600; border: 1px solid currentColor; }
+.good { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+.note { font-size: .88em; color: var(--dim); }
+pre { margin: 0; font: 12px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--dim); max-height: 160px; overflow: auto; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <header class="card">
+    <h1>Arcade link test</h1>
+    <p class="dim">Can two devices on different networks connect directly, with no game server in the middle?
+      Open this page on your laptop and on your phone (wifi off, on cellular data), then follow the steps.</p>
+  </header>
+
+  <section class="card" id="pickRole">
+    <h2>1. Which device is this?</h2>
+    <div class="row">
+      <button class="primary" id="btnHost">Laptop: create invite</button>
+      <button id="btnGuestManual">Phone: I have an invite code</button>
+    </div>
+    <p class="note">Invites and replies contain this device's network addresses. Send them only to yourself or
+      the person you're testing with.</p>
+  </section>
+
+  <section class="card" id="hostStep" hidden>
+    <h2>2. Send this invite to the other device</h2>
+    <p class="dim">Text or email it to yourself, then open the link on the phone.</p>
+    <textarea id="inviteOut" readonly aria-label="Invite link"></textarea>
+    <div class="row"><button id="copyInvite">Copy invite link</button></div>
+    <h2>3. Paste the reply from the other device</h2>
+    <textarea id="replyIn" placeholder="Paste the reply code here" aria-label="Reply code"></textarea>
+    <div class="row"><button class="primary" id="btnConnect">Connect</button></div>
+  </section>
+
+  <section class="card" id="guestPaste" hidden>
+    <h2>2. Paste the invite</h2>
+    <textarea id="inviteIn" placeholder="Paste the invite link or code" aria-label="Invite"></textarea>
+    <div class="row"><button class="primary" id="btnJoin">Make reply</button></div>
+  </section>
+
+  <section class="card" id="guestStep" hidden>
+    <h2>3. Send this reply back to the laptop</h2>
+    <p class="dim">Copy it, text or email it to yourself, and paste it on the laptop. Leave this page open.</p>
+    <textarea id="replyOut" readonly aria-label="Reply code"></textarea>
+    <div class="row"><button id="copyReply">Copy reply</button></div>
+  </section>
+
+  <section class="card" aria-live="polite">
+    <h2>What we found</h2>
+    <dl>
+      <dt>This network</dt><dd id="natOut">checking…</dd>
+      <dt>Connection</dt><dd id="connOut">not started</dd>
+      <dt>Route</dt><dd id="routeOut">–</dd>
+      <dt>Game traffic</dt><dd id="trafficOut">–</dd>
+    </dl>
+    <p class="note" id="verdict"></p>
+  </section>
+
+  <section class="card">
+    <h2>Report</h2>
+    <p class="dim">Copy this and paste it back to me. Network addresses are left out.</p>
+    <pre id="report">(fills in as the test runs)</pre>
+    <div class="row"><button id="copyReport">Copy report</button></div>
+    <details>
+      <summary class="note">Event log</summary>
+      <pre id="log"></pre>
+    </details>
+  </section>
+</main>
+
+<script>
+'use strict';
+// Two public STUN servers. Each tells us what address and port the internet sees for
+// this device. If the PORT differs between them, the router hands out a new port per
+// destination ("symmetric NAT"), which is what usually defeats direct connections.
+const STUN = ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'];
+const CONNECT_TIMEOUT_MS = 25000;
+const GAME_HZ = 20, GAME_SECONDS = 10, GAME_BYTES = 24;   // Canyon's ghost: 6 floats at 20 Hz
+
+const $ = id => document.getElementById(id);
+const state = { role: null, nat: null, conn: 'not started', route: null, traffic: null, started: 0 };
+let pc = null, game = null, ctrl = null, watchdog = 0;
+
+const log = [];
+function note(msg) {
+  log.push(`${new Date().toISOString().slice(11, 19)}  ${msg}`);
+  $('log').textContent = log.join('\n');
+}
+function setOut(id, html) { $(id).innerHTML = html; renderReport(); }
+const pill = (cls, text) => `<span class="pill ${cls}">${text}</span>`;
+
+// ---------- compact codes: deflate + base64url ----------
+const b64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const fromB64url = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+async function pack(obj) {
+  const cs = new CompressionStream('deflate-raw');
+  const w = cs.writable.getWriter();
+  w.write(new TextEncoder().encode(JSON.stringify(obj)));
+  w.close();
+  return b64url(new Uint8Array(await new Response(cs.readable).arrayBuffer()));
+}
+async function unpack(code) {
+  const raw = code.trim().replace(/^.*#join=/, '').replace(/\s+/g, '');
+  const ds = new DecompressionStream('deflate-raw');
+  const w = ds.writable.getWriter();
+  w.write(fromB64url(raw));
+  w.close();
+  return JSON.parse(await new Response(ds.readable).text());
+}
+
+// ---------- 1. what kind of network is this? ----------
+async function probeNat() {
+  const out = {};
+  try {
+    const p = new RTCPeerConnection({ iceServers: STUN.map(urls => ({ urls })) });
+    p.createDataChannel('probe');
+    p.onicecandidate = e => {
+      const c = e.candidate;
+      if (c && c.type === 'srflx') out[c.url || 'stun'] = c.port;
+    };
+    await p.setLocalDescription(await p.createOffer());
+    await gatherDone(p, 6000);
+    p.close();
+  } catch (err) { note('network check failed: ' + err.message); }
+  const ports = Object.values(out);
+  let kind, html;
+  if (!ports.length) { kind = 'blocked'; html = pill('bad', 'Blocked') + ' UDP to the outside is blocked. Direct connections will fail here.'; }
+  else if (ports.length < 2) { kind = 'partial'; html = pill('warn', 'Unclear') + ` Only one server answered (port ${ports[0]}).`; }
+  else if (ports.every(p => p === ports[0])) { kind = 'friendly'; html = pill('good', 'Friendly') + ` Same public port for every server (${ports[0]}). Good for direct connections.`; }
+  else { kind = 'symmetric'; html = pill('warn', 'Symmetric NAT') + ` A different public port per server (${ports.join(' / ')}). Direct works only if the other side is friendly.`; }
+  state.nat = { kind, ports };
+  note(`network check: ${kind} ${ports.join('/')}`);
+  setOut('natOut', html);
+}
+
+function gatherDone(p, ms) {
+  return new Promise(res => {
+    if (p.iceGatheringState === 'complete') return res();
+    const t = setTimeout(res, ms);
+    p.addEventListener('icegatheringstatechange', () => { if (p.iceGatheringState === 'complete') { clearTimeout(t); res(); } });
+  });
+}
+
+// ---------- 2. the connection ----------
+function newPeer() {
+  const p = new RTCPeerConnection({ iceServers: STUN.map(urls => ({ urls })) });
+  p.addEventListener('iceconnectionstatechange', () => note('ice: ' + p.iceConnectionState));
+  p.addEventListener('connectionstatechange', () => {
+    note('connection: ' + p.connectionState);
+    if (p.connectionState === 'connected') onConnected();
+    if (p.connectionState === 'failed') onFailed('the networks could not reach each other directly');
+  });
+  p.addEventListener('datachannel', e => bindChannel(e.channel));
+  return p;
+}
+
+function bindChannel(ch) {
+  ch.binaryType = 'arraybuffer';
+  if (ch.label === 'game') game = ch;
+  if (ch.label === 'ctrl') ctrl = ch;
+  ch.addEventListener('message', e => {
+    if (ch.label === 'game') {
+      if (state.role === 'guest') game.send(e.data);            // echo straight back
+      else onEcho(e.data);
+    } else note('other device says: ' + e.data);
+  });
+  ch.addEventListener('open', () => { note(ch.label + ' channel open'); if (ch.label === 'ctrl') ch.send(`hello from the ${state.role}`); });
+}
+
+function armWatchdog() {
+  state.started = performance.now();
+  state.conn = 'connecting';
+  setOut('connOut', pill('warn', 'Connecting…'));
+  clearTimeout(watchdog);
+  watchdog = setTimeout(() => {
+    if (pc && pc.connectionState !== 'connected') onFailed(`no route found within ${CONNECT_TIMEOUT_MS / 1000} s`);
+  }, CONNECT_TIMEOUT_MS);
+}
+
+async function onConnected() {
+  clearTimeout(watchdog);
+  const secs = ((performance.now() - state.started) / 1000).toFixed(1);
+  state.conn = `connected in ${secs} s`;
+  setOut('connOut', pill('good', 'Connected') + ` in ${secs} s, directly between the two devices.`);
+  // Which route did it take? host = same network, srflx/prflx = across the internet.
+  try {
+    const stats = await pc.getStats();
+    let pair = null;
+    stats.forEach(r => { if (r.type === 'transport' && r.selectedCandidatePairId) pair = stats.get(r.selectedCandidatePairId); });
+    if (!pair) stats.forEach(r => { if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded') pair = r; });
+    if (pair) {
+      const l = stats.get(pair.localCandidateId), r = stats.get(pair.remoteCandidateId);
+      const lt = l?.candidateType, rt = r?.candidateType;
+      const across = lt !== 'host' || rt !== 'host';
+      state.route = `${lt} ↔ ${rt} over ${l?.protocol}`;
+      setOut('routeOut', `${state.route}` + (across ? ' (across the internet)' : ' (same network, which doesn\'t prove much)'));
+    }
+  } catch (err) { note('stats failed: ' + err.message); }
+  if (state.role === 'host') setTimeout(runGameTest, 800);
+  verdict();
+}
+
+function onFailed(why) {
+  clearTimeout(watchdog);
+  if (state.conn.startsWith('failed')) return;
+  state.conn = 'failed: ' + why;
+  setOut('connOut', pill('bad', 'Failed') + ' ' + why + '.');
+  verdict();
+}
+
+// ---------- 3. Canyon-sized game traffic ----------
+// 24-byte packets at 20 Hz on an unreliable, unordered channel, like live ghost
+// positions. The phone echoes each one; we measure round trips and losses.
+const sentAt = new Map();
+let rtts = [], sent = 0;
+function runGameTest() {
+  if (!game || game.readyState !== 'open') { note('game channel not open'); return; }
+  rtts = []; sent = 0; sentAt.clear();
+  setOut('trafficOut', 'running for ' + GAME_SECONDS + ' s…');
+  const buf = new ArrayBuffer(GAME_BYTES), view = new DataView(buf);
+  const timer = setInterval(() => {
+    view.setUint32(0, sent);
+    sentAt.set(sent, performance.now());
+    game.send(buf);
+    sent++;
+    if (sent >= GAME_HZ * GAME_SECONDS) {
+      clearInterval(timer);
+      setTimeout(finishGameTest, 1500);                          // let late echoes land
+    }
+  }, 1000 / GAME_HZ);
+}
+function onEcho(data) {
+  const seq = new DataView(data).getUint32(0);
+  const t0 = sentAt.get(seq);
+  if (t0 != null) { rtts.push(performance.now() - t0); sentAt.delete(seq); }
+}
+function finishGameTest() {
+  const got = rtts.length, lost = sent - got;
+  rtts.sort((a, b) => a - b);
+  const med = rtts[Math.floor(got / 2)] ?? NaN, p95 = rtts[Math.floor(got * 0.95)] ?? NaN;
+  state.traffic = { sent, got, lossPct: +(100 * lost / Math.max(1, sent)).toFixed(1), med: Math.round(med), p95: Math.round(p95) };
+  const t = state.traffic;
+  if (!got) {
+    setOut('trafficOut', pill('bad', '100% lost') + ` none of ${sent} packets came back`);
+  } else {
+    const cls = t.lossPct <= 2 && t.p95 < 200 ? 'good' : t.lossPct <= 10 ? 'warn' : 'bad';
+    setOut('trafficOut', pill(cls, `${t.lossPct}% lost`) + ` ${t.got}/${t.sent} back · round trip ${t.med} ms typical, ${t.p95} ms worst 5%`);
+  }
+  if (ctrl?.readyState === 'open') ctrl.send(`game test: ${t.lossPct}% lost` + (got ? `, ${t.med} ms typical round trip` : ''));
+  verdict();
+}
+
+function verdict() {
+  let text = '';
+  const local = state.route && state.route.startsWith('host ↔ host');
+  if (state.conn.startsWith('connected') && local) text = 'Connected, but both devices are on the same network, so this says nothing about the internet. Put one device on cellular data and run it again.';
+  else if (state.conn.startsWith('connected')) text = 'A direct link works between these two networks, so live multiplayer could skip the relay server.';
+  else if (state.conn.startsWith('failed')) text = 'No direct link. Multiplayer between these networks would need a relay server that both devices connect out to.';
+  $('verdict').textContent = text;
+  renderReport();
+}
+
+function renderReport() {
+  const ua = navigator.userAgentData;
+  const device = ua ? `${ua.platform || '?'}${ua.mobile ? ' (mobile)' : ''}, ${(ua.brands || []).map(b => b.brand + ' ' + b.version).filter(s => !/Not/.test(s)).join(', ')}` : navigator.userAgent.slice(0, 90);
+  const t = state.traffic;
+  $('report').textContent = [
+    'Arcade link test',
+    `role: ${state.role || 'not chosen'}`,
+    `device: ${device}`,
+    `network: ${state.nat ? state.nat.kind + ' (ports ' + state.nat.ports.join(' / ') + ')' : 'checking'}`,
+    `connection: ${state.conn}`,
+    `route: ${state.route || '-'}`,
+    `game traffic: ${t ? `${t.got}/${t.sent} back, ${t.lossPct}% lost` + (t.got ? `, ${t.med} ms typical, ${t.p95} ms p95` : '') : '-'}`,
+  ].join('\n');
+}
+
+// ---------- wiring ----------
+async function copy(text, btn) {
+  try { await navigator.clipboard.writeText(text); btn.textContent = 'Copied'; }
+  catch { btn.textContent = 'Select and copy manually'; }
+  setTimeout(() => { btn.textContent = btn.dataset.label; }, 1800);
+}
+for (const id of ['copyInvite', 'copyReply', 'copyReport']) $(id).dataset.label = $(id).textContent;
+
+// A device picks its role once. A second press (double-tap, stray click) would throw
+// away a live connection, so after the first one the role buttons do nothing.
+function lockRole(role) {
+  note('pressed: ' + role);
+  if (state.role) { note(`ignored: already the ${state.role}`); return false; }
+  state.role = role;
+  $('btnHost').disabled = true; $('btnGuestManual').disabled = true;
+  return true;
+}
+
+$('btnHost').addEventListener('click', async () => {
+  if (!lockRole('host')) return;
+  $('pickRole').hidden = true; $('hostStep').hidden = false;
+  $('inviteOut').value = 'Making invite…';
+  pc = newPeer();
+  bindChannel(pc.createDataChannel('game', { ordered: false, maxRetransmits: 0 }));
+  bindChannel(pc.createDataChannel('ctrl'));
+  await pc.setLocalDescription(await pc.createOffer());
+  await gatherDone(pc, 6000);
+  const code = await pack({ v: 1, sdp: pc.localDescription.sdp });
+  $('inviteOut').value = location.origin + location.pathname + '#join=' + code;
+  note(`invite ready (${code.length} characters)`);
+  renderReport();
+});
+
+$('btnConnect').addEventListener('click', async () => {
+  note('pressed: connect');
+  if (state.role !== 'host' || !pc || pc.remoteDescription) { note('ignored: connect needs a fresh invite on this device'); return; }
+  try {
+    const o = await unpack($('replyIn').value);
+    armWatchdog();
+    await pc.setRemoteDescription({ type: 'answer', sdp: o.sdp });
+    note('reply accepted');
+  } catch (err) { setOut('connOut', pill('bad', 'Bad reply') + ' That reply code could not be read. Paste the whole thing.'); note('reply error: ' + err.message); }
+});
+
+let joining = false;
+async function join(code) {
+  if (joining || (state.role && state.role !== 'guest')) { note('ignored: already ' + (state.role || 'joining')); return; }
+  joining = true;
+  state.role = 'guest';
+  $('btnHost').disabled = true; $('btnGuestManual').disabled = true;
+  $('pickRole').hidden = true; $('guestPaste').hidden = true; $('guestStep').hidden = false;
+  $('replyOut').value = 'Making reply…';
+  try {
+    const o = await unpack(code);
+    pc = newPeer();
+    await pc.setRemoteDescription({ type: 'offer', sdp: o.sdp });
+    await pc.setLocalDescription(await pc.createAnswer());
+    await gatherDone(pc, 6000);
+    const reply = await pack({ v: 1, sdp: pc.localDescription.sdp });
+    $('replyOut').value = reply;
+    armWatchdog();
+    note(`reply ready (${reply.length} characters)`);
+  } catch (err) {
+    $('replyOut').value = '';
+    setOut('connOut', pill('bad', 'Bad invite') + ' That invite could not be read. Copy the whole link.');
+    note('invite error: ' + err.message);
+  }
+}
+$('btnGuestManual').addEventListener('click', () => {
+  if (state.role) { note('ignored: already the ' + state.role); return; }
+  $('pickRole').hidden = true; $('guestPaste').hidden = false;
+});
+$('btnJoin').addEventListener('click', () => join($('inviteIn').value));
+$('copyInvite').addEventListener('click', e => copy($('inviteOut').value, e.currentTarget));
+$('copyReply').addEventListener('click', e => copy($('replyOut').value, e.currentTarget));
+$('copyReport').addEventListener('click', e => copy($('report').textContent, e.currentTarget));
+
+// Opened from an invite link? The code rides in the #fragment, which browsers never send
+// to the web server, so the host never sees it. Clear it so a refresh doesn't re-join.
+if (location.hash.startsWith('#join=')) {
+  const code = location.hash.slice(6);
+  history.replaceState(null, '', location.pathname);
+  join(code);
+}
+probeNat();
+renderReport();
+</script>
+</body>
+</html>
